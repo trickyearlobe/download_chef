@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+require 'httpclient'
+require 'json'
+require 'fileutils'
+
+def download_file(myfile)
+  remote_url = "https://chef.bintray.com/#{myfile['repo']}/#{myfile['path']}"
+  local_url  = File.join(ENV['HOME'],'chef-kits','packages','chef',myfile['path'])
+
+  local_directory = File.dirname(local_url)
+  FileUtils::mkdir_p(local_directory) unless File.exists?(local_directory)
+
+  if File.exists?(local_url)
+    sha256=Digest::SHA256.digest(File.read(local_url)).unpack('H*').first
+    if sha256 == myfile['sha256']
+      puts "  skip existing file #{local_url} "
+      return
+    else
+      puts "  #{sha256} does not match #{myfile['sha256']}"
+    end
+  end
+  `wget -O #{local_url} #{remote_url}`
+end
+
+
+
+client = HTTPClient.new
+basedir = File.join('~/','chef-kits','packages')
+
+packages = %w( analytics chef chef-server chefdk compliance delivery delivery-cli manage push-jobs-client push-jobs-server reporting supermarket )
+# packages = %w( chefdk )
+
+packages.each do |package|
+  latest = JSON.parse(client.get_content("http://api.bintray.com/packages/chef/stable/#{package}/versions/_latest"))
+  files = JSON.parse(client.get_content("https://api.bintray.com/packages/chef/stable/#{package}/versions/#{latest['name']}/files"))
+
+  puts "Processing #{package} packages"
+  files.each do |myfile|
+    download_file(myfile) unless (myfile['name'] =~ /.*\.asc/) || (myfile['name'] =~ /i386/)
+  end
+end
